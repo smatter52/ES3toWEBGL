@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebGL</title>
+</head>
+
+<body onload="init()">
+    <canvas id="myCanvas" width="800" height="600"></canvas>
+</body>
+
+<script
+    id="shaderVs" type="x-shader/x-vertex">#version 300 es
+    layout (location = 8) in vec4 position;
+    layout (location = 9) in vec2 texcoord;
+    uniform mat4 mview;
+    uniform mat4 tview;
+    out vec2 v_texcoord;
+    void main() {
+       vec4 mposition = mview*position;
+       gl_Position = mposition ;
+       v_texcoord = vec2(tview*vec4(texcoord.s,texcoord.t, 0.0, 1.0));
+    }
+</script>
+
+<script id="shaderFs" type="x-shader/x-fragment">#version 300 es
+   out mediump vec4 FragColor;
+   in mediump vec2 v_texcoord;
+   uniform int texGenflag;
+   uniform mediump vec4 color4;
+   uniform mediump float Angle;
+   uniform mediump float Radius;
+   uniform mediump vec2 Centre;
+   uniform mediump sampler2D tex_s;
+
+   void main() {
+       mediump vec2 normCoord; 
+       mediump vec2 f_texcoord = v_texcoord;
+
+       if (texGenflag == 0)
+          FragColor = color4;
+        else if (texGenflag == 1)
+          FragColor = texture(tex_s,v_texcoord)*color4;
+        else if (texGenflag == 2)
+        {
+    // Shift origin to texture centre (with offset)
+      normCoord.x = f_texcoord.x*2.0 - (Centre.x);
+      normCoord.y = f_texcoord.y*2.0 - (Centre.y);
+    // Convert Cartesian to Polar coords
+      mediump float r = length(normCoord);
+      mediump float theta = atan(normCoord.y, normCoord.x);
+    // Rotate
+      r=ceil(r/Radius)*Radius;
+      theta=floor(theta/Angle)*Angle;
+    // Convert Polar back to Cartesian coords
+      normCoord.x = ((r * cos(theta)) - Centre.x*1.0);
+      normCoord.y = ((r * sin(theta)) - Centre.y*1.0);
+    // Shift origin back to bottom-left (taking offset into account)
+      f_texcoord.x = normCoord.x/2.0 + (Centre.x/2.0);
+      f_texcoord.y = normCoord.y/2.0 + (Centre.y/2.0);
+
+      FragColor = texture(tex_s, f_texcoord)*color4;
+        }
+    }
+</script>
+
+<script>
+// Initialise for WebGL2
+    function init() {
+        // Get canvas object from the DOM
+        var canvas = document.getElementById("myCanvas");
+
+        // Init WebGL context
+        window.gl = canvas.getContext("webgl2",{stencil: true, alpha: true,
+				                               premultipliedAlpha: false,});
+        if (!gl) {
+            console.log("Failed to get the rendering context for WebGL2");
+            return;
+        }
+
+        // Init shaders
+        var vs_source = document.getElementById('shaderVs').innerHTML;
+        var fs_source = document.getElementById('shaderFs').innerHTML;
+
+        // Compile shaders
+        var vertexShader = makeShader(gl, vs_source, gl.VERTEX_SHADER);
+        var fragmentShader = makeShader(gl, fs_source, gl.FRAGMENT_SHADER);
+
+        // Create program
+        glProgram = gl.createProgram();
+
+        // Attach and link shaders to the program
+        gl.attachShader(glProgram, vertexShader);
+        gl.attachShader(glProgram, fragmentShader);
+        gl.linkProgram(glProgram);
+        if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
+            console.log('Failed to intialize shaders.');
+            return;
+        }
+
+        // Use program
+        gl.useProgram(glProgram);
+        gl.program = glProgram;
+        gl.deleteShader ( vertexShader );
+        gl.deleteShader ( fragmentShader );
+
+        // Get locations as globals harmonised to sglesinit.c
+        window.position_loc  = gl.getAttribLocation(glProgram , "position");
+        window.texc_loc      = gl.getAttribLocation(glProgram , "texcoord");
+        window.tflag_loc     = gl.getUniformLocation(glProgram , "texGenflag");
+        window.color4_loc    = gl.getUniformLocation(glProgram , "color4");
+        window.texs_loc      = gl.getUniformLocation(glProgram , "tex_s");
+        window.angle_loc     = gl.getUniformLocation(glProgram , "Angle");
+        window.radius_loc    = gl.getUniformLocation(glProgram , "Radius");
+        window.centre_loc    = gl.getUniformLocation(glProgram , "Centre");
+        window.locm 			  = gl.getUniformLocation(glProgram, "mview") ;
+        window.loct		 	  = gl.getUniformLocation(glProgram, "tview") ;
+
+
+        // Clear canvas
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // and initialise. Matrix standard in VG and GL is column order
+        const migi = [1.0,0.0,0.0,0.0 ,0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0];
+        gl.uniformMatrix4fv(locm, false , migi );
+        gl.uniformMatrix4fv(loct, false , migi );
+        gl.uniform1i(tflag_loc, 0) ;
+//Set black
+        gl.uniform4f(color4_loc, 0.0, 0.0, 0.0, 1.0);
+// Setup GL projection
+        gl.viewport(0, 0, myCanvas.width, myCanvas.height);
+
+        console.log("Initialised: %d\n", gl.getError()) ;// Call the flash grapics WebGL
+        fg() ;
+    }
+
+    function makeShader(gl, src, type) {
+        var shader = gl.createShader(type);
+        gl.shaderSource(shader, src);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert("Error compiling shader: " + gl.getShaderInfoLog(shader));
+            return;
+        }
+        return shader;
+    }
+</script>
+
+<script>
+function fg() {
+const myloc = [locm,loct,tflag_loc,color4_loc,centre_loc,texs_loc,angle_loc,radius_loc,position_loc,texc_loc];
+gl.viewport(0,0,800,600);
+gl.clearColor(0.00,0.00,0.00,1.00);
+gl.clear(16384);
+var mytex;
+mytex = gl.createTexture();
+gl.viewport(0,0,800,600);
+var mytex;
+mytex = gl.createTexture();
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(517,1,1);
+gl.stencilOp(7680,7682,7682);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([484.0,410.5,268.0,410.5,268.0,409.5,268.0,409.5,484.0,409.5,484.0,410.5,484.5,409.5,484.0,409.5,484.0,410.0,484.0,410.0,484.5,410.0,484.5,409.5,483.5,476.0,483.5,410.0,484.5,410.0,484.5,410.0,484.5,476.0,483.5,476.0,484.5,476.5,484.5,476.0,484.0,476.0,484.0,476.0,484.0,476.5,484.5,476.5,268.0,475.5,484.0,475.5,484.0,476.5,484.0,476.5,268.0,476.5,268.0,475.5,267.5,476.5,268.0,476.5,268.0,476.0,268.0,476.0,267.5,476.0,267.5,476.5,268.5,410.0,268.5,476.0,267.5,476.0,267.5,476.0,267.5,410.0,268.5,410.0,267.5,409.5,267.5,410.0,268.0,410.0,268.0,410.0,268.0,409.5,267.5,409.5]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(4,0,48);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,1,1);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.0000,0.7529,0.0000,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([263.0,405.0,489.0,405.0,489.0,481.0,263.0,481.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([263.0,405.0,489.0,405.0,489.0,481.0,263.0,481.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.stencilMask(0);
+gl.clear(1024);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(517,1,1);
+gl.stencilOp(7680,7682,7682);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([502.9,457.9,503.5,445.0,504.5,445.0,504.5,445.0,503.9,458.0,502.9,457.9,503.9,458.0,503.9,458.0,503.4,457.9,501.0,470.7,502.9,457.9,503.9,458.0,503.9,458.0,502.0,470.8,501.0,470.7,501.9,470.9,502.0,470.8,501.5,470.8,497.8,483.2,501.0,470.6,501.9,470.9,501.9,470.9,498.8,483.4,497.8,483.2,498.8,483.5,498.8,483.4,498.3,483.3,493.5,495.3,497.8,483.1,498.8,483.5,498.8,483.5,494.4,495.7,493.5,495.3,494.4,495.7,494.4,495.7,494.0,495.5,488.0,507.0,493.5,495.3,494.4,495.7,494.4,495.7,488.9,507.4,488.0,507.0,488.8,507.5,488.9,507.4,488.4,507.2,481.3,518.1,488.0,507.0,488.8,507.5,488.8,507.5,482.2,518.6,481.3,518.1,482.2,518.6,482.2,518.6,481.8,518.3,473.6,528.4,481.4,518.0,482.2,518.6,482.2,518.6,474.4,529.0,473.6,528.4,474.4,529.1,474.4,529.0,474.0,528.7,465.0,538.0,473.7,528.4,474.4,529.1,474.4,529.1,465.7,538.7,465.0,538.0,465.7,538.7,465.7,538.7,465.3,538.3,455.4,546.7,465.0,538.0,465.7,538.7,465.7,538.7,456.1,547.4,455.4,546.7,456.0,547.4,456.1,547.4,455.7,547.0,445.0,554.4,455.4,546.6,456.0,547.4,456.0,547.4,445.6,555.2,445.0,554.4,445.6,555.2,445.6,555.2,445.3,554.8,434.0,561.0,445.1,554.3,445.6,555.2,445.6,555.2,434.5,561.8,434.0,561.0,434.4,561.9,434.5,561.8,434.2,561.4,422.3,566.5,434.0,561.0,434.4,561.9,434.4,561.9,422.7,567.4,422.3,566.5,422.7,567.4,422.7,567.4,422.5,567.0,410.1,570.8,422.3,566.5,422.7,567.4,422.7,567.4,410.5,571.8,410.1,570.8,410.4,571.8,410.5,571.8,410.3,571.3,397.6,574.0,410.2,570.8,410.4,571.8,410.4,571.8,397.9,574.9,397.6,574.0,397.8,575.0,397.9,574.9,397.8,574.5,384.9,575.9,397.7,574.0,397.8,575.0,397.8,575.0,385.0,576.9,384.9,575.9,385.0,576.9,385.0,576.9,384.9,576.4,372.0,576.5,384.9,575.9,385.0,576.9,385.0,576.9,372.0,577.5,372.0,576.5,372.0,577.5,372.0,577.5,372.0,577.0,359.1,575.9,372.0,576.5,372.0,577.5,372.0,577.5,359.0,576.9,359.1,575.9,359.0,576.9,359.0,576.9,359.1,576.4,346.3,574.0,359.1,575.9,359.0,576.9,359.0,576.9,346.2,575.0,346.3,574.0,346.1,574.9,346.2,575.0,346.2,574.5,333.8,570.8,346.4,574.0,346.1,574.9,346.1,574.9,333.6,571.8,333.8,570.8,333.5,571.8,333.6,571.8,333.7,571.3,321.7,566.5,333.9,570.8,333.5,571.8,333.5,571.8,321.3,567.4,321.7,566.5,321.3,567.4,321.3,567.4,321.5,567.0,310.0,561.0,321.7,566.5,321.3,567.4,321.3,567.4,309.6,561.9,310.0,561.0,309.5,561.8,309.6,561.9,309.8,561.4,298.9,554.3,310.0,561.0,309.5,561.8,309.5,561.8,298.4,555.2,298.9,554.3,298.4,555.2,298.4,555.2,298.7,554.8,288.6,546.6,299.0,554.4,298.4,555.2,298.4,555.2,288.0,547.4,288.6,546.6,287.9,547.4,288.0,547.4,288.3,547.0,279.0,538.0,288.6,546.7,287.9,547.4,287.9,547.4,278.3,538.7,279.0,538.0,278.3,538.7,278.3,538.7,278.7,538.3,270.3,528.4,279.0,538.0,278.3,538.7,278.3,538.7,269.6,529.1,270.3,528.4,269.6,529.0,269.6,529.1,270.0,528.7,262.6,518.0,270.4,528.4,269.6,529.0,269.6,529.0,261.8,518.6,262.6,518.0,261.8,518.6,261.8,518.6,262.2,518.3,256.0,507.0,262.7,518.1,261.8,518.6,261.8,518.6,255.2,507.5,256.0,507.0,255.1,507.4,255.2,507.5,255.6,507.2,250.5,495.3,256.0,507.0,255.1,507.4,255.1,507.4,249.6,495.7,250.5,495.3,249.6,495.7,249.6,495.7,250.0,495.5,246.2,483.1,250.5,495.3,249.6,495.7,249.6,495.7,245.2,483.5,246.2,483.1,245.2,483.4,245.2,483.5,245.7,483.3,243.0,470.6,246.2,483.2,245.2,483.4,245.2,483.4,242.1,470.9,243.0,470.6,242.0,470.8,242.1,470.9,242.5,470.8,241.1,457.9,243.0,470.7,242.0,470.8,242.0,470.8,240.1,458.0,241.1,457.9,240.1,458.0,240.1,458.0,240.6,457.9,240.5,445.0,241.1,457.9,240.1,458.0,240.1,458.0,239.5,445.0,240.5,445.0,239.5,445.0,239.5,445.0,240.0,445.0,240.0,445.0,239.5,445.0,239.5,445.0,241.1,432.1,240.5,445.0,239.5,445.0,239.5,445.0,240.1,432.0,241.1,432.1,240.1,432.0,240.1,432.0,240.6,432.1,243.0,419.3,241.1,432.1,240.1,432.0,240.1,432.0,242.0,419.2,243.0,419.3,242.1,419.1,242.0,419.2,242.5,419.2,246.2,406.8,243.0,419.4,242.1,419.1,242.1,419.1,245.2,406.6,246.2,406.8,245.2,406.5,245.2,406.6,245.7,406.7,250.5,394.7,246.2,406.9,245.2,406.5,245.2,406.5,249.6,394.3,250.5,394.7,249.6,394.3,249.6,394.3,250.0,394.5,256.0,383.0,250.5,394.7,249.6,394.3,249.6,394.3,255.1,382.6,256.0,383.0,255.2,382.5,255.1,382.6,255.6,382.8,262.7,371.9,256.0,383.0,255.2,382.5,255.2,382.5,261.8,371.4,262.7,371.9,261.8,371.4,261.8,371.4,262.2,371.7,270.4,361.6,262.6,372.0,261.8,371.4,261.8,371.4,269.6,361.0,270.4,361.6,269.6,360.9,269.6,361.0,270.0,361.3,279.0,352.0,270.3,361.6,269.6,360.9,269.6,360.9,278.3,351.3,279.0,352.0,278.3,351.3,278.3,351.3,278.7,351.7,288.6,343.3,279.0,352.0,278.3,351.3,278.3,351.3,287.9,342.6,288.6,343.3,288.0,342.6,287.9,342.6,288.3,343.0,299.0,335.6,288.6,343.4,288.0,342.6,288.0,342.6,298.4,334.8,299.0,335.6,298.4,334.8,298.4,334.8,298.7,335.2,310.0,329.0,298.9,335.7,298.4,334.8,298.4,334.8,309.5,328.2,310.0,329.0,309.6,328.1,309.5,328.2,309.8,328.6,321.7,323.5,310.0,329.0,309.6,328.1,309.6,328.1,321.3,322.6,321.7,323.5,321.3,322.6,321.3,322.6,321.5,323.0,333.9,319.2,321.7,323.5,321.3,322.6,321.3,322.6,333.5,318.2,333.9,319.2,333.6,318.2,333.5,318.2,333.7,318.7,346.4,316.0,333.8,319.2,333.6,318.2,333.6,318.2,346.1,315.1,346.4,316.0,346.2,315.0,346.1,315.1,346.2,315.5,359.1,314.1,346.3,316.0,346.2,315.0,346.2,315.0,359.0,313.1,359.1,314.1,359.0,313.1,359.0,313.1,359.1,313.6,372.0,313.5,359.1,314.1,359.0,313.1,359.0,313.1,372.0,312.5,372.0,313.5,372.0,312.5,372.0,312.5,372.0,313.0,384.9,314.1,372.0,313.5,372.0,312.5,372.0,312.5,385.0,313.1,384.9,314.1,385.0,313.1,385.0,313.1,384.9,313.6,397.7,316.0,384.9,314.1,385.0,313.1,385.0,313.1,397.8,315.0,397.7,316.0,397.9,315.1,397.8,315.0,397.8,315.5,410.2,319.2,397.6,316.0,397.9,315.1,397.9,315.1,410.4,318.2,410.2,319.2,410.5,318.2,410.4,318.2,410.3,318.7,422.3,323.5,410.1,319.2,410.5,318.2,410.5,318.2,422.7,322.6,422.3,323.5,422.7,322.6,422.7,322.6,422.5,323.0,434.0,329.0,422.3,323.5,422.7,322.6,422.7,322.6,434.4,328.1,434.0,329.0,434.5,328.2,434.4,328.1,434.2,328.6,445.1,335.7,434.0,329.0,434.5,328.2,434.5,328.2,445.6,334.8,445.1,335.7,445.6,334.8,445.6,334.8,445.3,335.2,455.4,343.4,445.0,335.6,445.6,334.8,445.6,334.8,456.0,342.6,455.4,343.4,456.1,342.6,456.0,342.6,455.7,343.0,465.0,352.0,455.4,343.3,456.1,342.6,456.1,342.6,465.7,351.3,465.0,352.0,465.7,351.3,465.7,351.3,465.3,351.7,473.7,361.6,465.0,352.0,465.7,351.3,465.7,351.3,474.4,360.9,473.7,361.6,474.4,361.0,474.4,360.9,474.0,361.3,481.4,372.0,473.6,361.6,474.4,361.0,474.4,361.0,482.2,371.4,481.4,372.0,482.2,371.4,482.2,371.4,481.8,371.7,488.0,383.0,481.3,371.9,482.2,371.4,482.2,371.4,488.8,382.5,488.0,383.0,488.9,382.6,488.8,382.5,488.4,382.8,493.5,394.7,488.0,383.0,488.9,382.6,488.9,382.6,494.4,394.3,493.5,394.7,494.4,394.3,494.4,394.3,494.0,394.5,497.8,406.9,493.5,394.7,494.4,394.3,494.4,394.3,498.8,406.5,497.8,406.9,498.8,406.6,498.8,406.5,498.3,406.7,501.0,419.4,497.8,406.8,498.8,406.6,498.8,406.6,501.9,419.1,501.0,419.4,502.0,419.2,501.9,419.1,501.5,419.2,502.9,432.1,501.0,419.3,502.0,419.2,502.0,419.2,503.9,432.0,502.9,432.1,503.9,432.0,503.9,432.0,503.4,432.1,503.5,445.0,502.9,432.1,503.9,432.0,503.9,432.0,504.5,445.0,503.5,445.0,503.5,445.0,503.5,445.0,504.5,445.0,504.5,445.0,504.5,445.0,503.5,445.0,504.5,445.0,504.5,445.0,504.0,445.0,504.0,445.0,504.5,445.0,504.5,445.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(4,0,588);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,1,1);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.7529,0.7529,0.0000,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([235.0,308.0,509.0,308.0,509.0,582.0,235.0,582.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([235.0,308.0,509.0,308.0,509.0,582.0,235.0,582.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.stencilMask(0);
+gl.clear(1024);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(519,0,0);
+gl.stencilOp(5386,5386,5386);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([562.0,405.0,0.0,0.0,0.0,0.0,653.0,405.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,5);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,0,0);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.7529,0.7529,0.7529,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([561.0,404.0,654.0,404.0,654.0,479.0,561.0,479.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([561.0,404.0,654.0,404.0,654.0,479.0,561.0,479.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.stencilMask(0);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(517,1,1);
+gl.stencilOp(7680,7682,7682);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([524.0,293.5,235.0,293.5,235.0,292.5,235.0,292.5,524.0,292.5,524.0,293.5]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(4,0,6);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,1,1);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.0000,0.7529,0.7529,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([230.0,288.0,529.0,288.0,529.0,298.0,230.0,298.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([230.0,288.0,529.0,288.0,529.0,298.0,230.0,298.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.stencilMask(0);
+gl.clear(1024);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(517,1,1);
+gl.stencilOp(7680,7682,7682);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([527.0,269.0,238.0,269.0,238.0,267.0,238.0,267.0,527.0,267.0,527.0,269.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(4,0,6);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,1,1);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.7529,0.7529,0.7529,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([229.0,259.0,536.0,259.0,536.0,277.0,229.0,277.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([229.0,259.0,536.0,259.0,536.0,277.0,229.0,277.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.stencilMask(0);
+gl.clear(1024);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(517,1,1);
+gl.stencilOp(7680,7682,7682);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([527.0,241.5,238.0,241.5,238.0,238.5,238.0,238.5,527.0,238.5,527.0,241.5]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(4,0,6);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,1,1);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.7529,0.0000,0.7529,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([225.0,227.0,540.0,227.0,540.0,253.0,225.0,253.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([225.0,227.0,540.0,227.0,540.0,253.0,225.0,253.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.stencilMask(0);
+gl.clear(1024);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(517,1,1);
+gl.stencilOp(7680,7682,7682);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([523.0,219.0,239.0,219.0,239.0,215.0,239.0,215.0,523.0,215.0,523.0,219.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(4,0,6);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,1,1);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.7529,0.7529,0.0000,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([222.0,200.0,540.0,200.0,540.0,234.0,222.0,234.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([222.0,200.0,540.0,200.0,540.0,234.0,222.0,234.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.stencilMask(0);
+gl.clear(1024);
+gl.disable(3089);
+gl.scissor(0,0,800,600);
+gl.enable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+gl.enable(2960);
+gl.stencilMask(255);
+gl.clear(1024);
+gl.stencilFunc(519,0,0);
+gl.stencilOp(5386,5386,5386);
+gl.depthMask(false);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([102.0,406.0,0.0,0.0,0.0,0.0,193.0,406.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,5);
+gl.disableVertexAttribArray(myloc[8]);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.stencilFunc(514,0,0);
+gl.stencilOp(0,0,0);
+gl.colorMask(true,true,true,true);
+var uniformvar = new Float32Array([0.0000,0.0000,0.6784,1.0000]);
+gl.uniform4fv(myloc[3],uniformvar);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([101.0,405.0,194.0,405.0,194.0,480.0,101.0,480.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.colorMask(false,false,false,false);
+gl.enableVertexAttribArray(myloc[8]);
+var vertices = new Float32Array([101.0,405.0,194.0,405.0,194.0,480.0,101.0,480.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+
+
+
+gl.drawArrays(6,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disable(3042);
+gl.stencilMask(0);
+gl.colorMask(true,true,true,true);
+gl.disable(2960);
+gl.disable(3089);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([582.0,436.0,574.0,436.0,582.0,444.0,574.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([590.0,436.0,582.0,436.0,590.0,444.0,582.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([598.0,436.0,590.0,436.0,598.0,444.0,590.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([606.0,436.0,598.0,436.0,606.0,444.0,598.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([614.0,436.0,606.0,436.0,614.0,444.0,606.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([622.0,436.0,614.0,436.0,622.0,444.0,614.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([630.0,436.0,622.0,436.0,630.0,444.0,622.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([638.0,436.0,630.0,436.0,638.0,444.0,630.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,173,255,0,0,173,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([646.0,436.0,638.0,436.0,646.0,444.0,638.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([348.0,440.0,340.0,440.0,348.0,448.0,340.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([356.0,440.0,348.0,440.0,356.0,448.0,348.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([364.0,440.0,356.0,440.0,364.0,448.0,356.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([372.0,440.0,364.0,440.0,372.0,448.0,364.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([380.0,440.0,372.0,440.0,380.0,448.0,372.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([388.0,440.0,380.0,440.0,388.0,448.0,380.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([396.0,440.0,388.0,440.0,396.0,448.0,388.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([404.0,440.0,396.0,440.0,404.0,448.0,396.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([412.0,440.0,404.0,440.0,412.0,448.0,404.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,192,192,255,192,192,192,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([420.0,440.0,412.0,440.0,420.0,448.0,412.0,448.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([125.0,436.0,117.0,436.0,125.0,444.0,117.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([133.0,436.0,125.0,436.0,133.0,444.0,125.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([141.0,436.0,133.0,436.0,141.0,444.0,133.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([149.0,436.0,141.0,436.0,149.0,444.0,141.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([157.0,436.0,149.0,436.0,157.0,444.0,149.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([165.0,436.0,157.0,436.0,165.0,444.0,157.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([173.0,436.0,165.0,436.0,173.0,444.0,165.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+var mgu = new Float32Array([0.0025,0.00,0.00,0.00,0.00,0.0033,0.00,0.00,0.00,0.00,1.00,0.00,-1.00,-1.00,1.00,1.00]);
+gl.uniformMatrix4fv(myloc[0],false,mgu);
+var mytex;
+mytex = gl.createTexture();
+gl.activeTexture(33984);
+gl.bindTexture(3553, mytex);
+gl.texParameteri(3553,10241,9728);
+gl.texParameteri(3553,10240,9728);
+gl.texParameteri(3553,33082,-1000);
+gl.pixelStorei(3317,1);
+var texdat = new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,192,0,0,255,192,0,0,255,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);
+gl.texImage2D(3553,0,6408,8,8,0,6408,5121,texdat);
+gl.uniform4f(myloc[3],1.00,1.00,1.00,1.00);
+gl.enable(3042);
+gl.blendEquationSeparate(32774,32774);
+gl.blendFuncSeparate(770,771,1,771);
+gl.uniform1i(myloc[2],1);
+gl.enableVertexAttribArray(myloc[8]);
+gl.enableVertexAttribArray(myloc[9]);
+var vertices = new Float32Array([181.0,436.0,173.0,436.0,181.0,444.0,173.0,444.0]);
+var textures = new Float32Array([1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0]);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[8],2,5126, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, textures, gl.DYNAMIC_DRAW);
+gl.vertexAttribPointer(myloc[9],2,5126, false, 0, 0);
+gl.drawArrays(5,0,4);
+gl.disableVertexAttribArray(myloc[8]);
+gl.disableVertexAttribArray(myloc[9]);
+gl.disable(3089);
+gl.disable(3042);
+gl.deleteTexture(mytex);
+gl.uniform1i(myloc[2],0);
+console.log("EOF: %d", gl.getError())
+}
+</script>
+</html>
