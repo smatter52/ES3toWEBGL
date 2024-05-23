@@ -262,7 +262,7 @@ GL_APICALL void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei cnt)
 
 // Now flush the bombers
   buf_indx = 0 ;
-  while (&scrp_buf[buf_indx][0] != 0 && buf_indx < MAX_BUF_INDX)
+  while (scrp_buf[buf_indx][0] != '\000' && buf_indx < MAX_BUF_INDX)
    { strcpy(scrp_pak, &scrp_buf[buf_indx][0]) ;
      send_wgl() ;
      buf_indx++ ;
@@ -579,8 +579,8 @@ float vertices[] = {263.00,405.00,489.00,405.00,489.00,481.00,263.00,481.00};
 float textures[] = {1.0,1.0,0.0,1.0,1.0,0.0,0.0,0.0};
 glVertexAttribPointer(8,2,5126, 0, 0, (void *)&vertices);
 glEnableVertexAttribArray(8);
-glVertexAttribPointer(6,2,5126, 0, 0, (void *)&textures);
-glEnableVertexAttribArray(6);
+// glVertexAttribPointer(6,2,5126, 0, 0, (void *)&textures);
+// glEnableVertexAttribArray(6);
 glDrawArrays(6,0,4);
 }
 #endif
